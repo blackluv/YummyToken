@@ -1,7 +1,3 @@
-/**
- *Submitted for verification at Etherscan.io on 2022-04-08
-*/
-
 pragma solidity ^0.6.12;
 // SPDX-License-Identifier: MIT
 // @author: YummyDAO with Sadio.tech
@@ -698,25 +694,24 @@ contract YummyToken is Context, IERC20, Ownable {
     mapping (address => bool) isMaxbalanceExempt;
     mapping (address => bool) private _isExcluded;
     address[] private _excluded;
-   
     uint256 private constant MAX = ~uint256(0);
     uint256 private _tTotal = 1000000000000000 * 10**18;
     uint256 private _rTotal = (MAX - (MAX % _tTotal));
     uint256 private _tFeeTotal;
 
-    string private _name = "Eleven Gold";
-    string private _symbol = "ELGD";
+    string private _name = "Eleven Gold6";
+    string private _symbol = "ELGD6";
     uint8 private _decimals = 18;
     
     uint256 public _taxFee = 2;
     uint256 private _previousTaxFee = _taxFee;
 
-    uint256 public _DevFee = 1;
-    address public DevWallet = 0xd52C0377D4422d0DF35eA17FDfe9f3fa83b85660;
-    uint256 private _previousDevFee = _DevFee;
+    uint256 public _BurnFee = 1;
+    address public DevWallet = 0x4F522041aC2B7903763f4c07da160365228C26a8;
+    uint256 private _previousBurnFee = _BurnFee;
     
-    uint256 public _liquidityFee = 8;
-    uint256 private _previousLiquidityFee = _liquidityFee;
+    uint256 public _DevFee = 8;
+    uint256 private _previousDevFee = _DevFee;
 
     IUniswapV2Router02 public immutable uniswapV2Router;
     address public immutable uniswapV2Pair;
@@ -882,12 +877,12 @@ contract YummyToken is Context, IERC20, Ownable {
         }
     }
         function _transferBothExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tDevfee) = _getValues(tAmount);
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);        
-        _takeLiquidity(tLiquidity);
+        _takeDevfee(tDevfee);
         _reflectFee(rFee, tFee);
         emit Transfer(sender, recipient, tTransferAmount);
     }
@@ -904,15 +899,9 @@ contract YummyToken is Context, IERC20, Ownable {
         _taxFee = taxFee;
     }
     
-    /*function setLiquidityFeePercent(uint256 liquidityFee) external onlyOwner() {
-        _liquidityFee = liquidityFee;
+    function setDevFeePercent(uint256 devFee) external onlyOwner() {
+        _DevFee = devFee;
     }
-   
-    /*function setMaxTxPercent(uint256 maxTxPercent) external onlyOwner() {
-        _maxTxAmount = _tTotal.mul(maxTxPercent).div(
-            10**2
-        );
-    }*/
 
     function setSwapAndLiquifyEnabled(bool _enabled) public onlyOwner {
         swapAndLiquifyEnabled = _enabled;
@@ -928,23 +917,23 @@ contract YummyToken is Context, IERC20, Ownable {
     }
 
     function _getValues(uint256 tAmount) private view returns (uint256, uint256, uint256, uint256, uint256, uint256) {
-        (uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getTValues(tAmount);
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee) = _getRValues(tAmount, tFee, tLiquidity, _getRate());
-        return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee, tLiquidity);
+        (uint256 tTransferAmount, uint256 tFee, uint256 tDevfee) = _getTValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee) = _getRValues(tAmount, tFee, tDevfee, _getRate());
+        return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee, tDevfee);
     }
 
     function _getTValues(uint256 tAmount) private view returns (uint256, uint256, uint256) {
         uint256 tFee = calculateTaxFee(tAmount);
-        uint256 tLiquidity = calculateLiquidityFee(tAmount);
-        uint256 tTransferAmount = tAmount.sub(tFee).sub(tLiquidity);
-        return (tTransferAmount, tFee, tLiquidity);
+        uint256 tDevfee = calculateDevFee(tAmount);
+        uint256 tTransferAmount = tAmount.sub(tFee).sub(tDevfee);
+        return (tTransferAmount, tFee, tDevfee);
     }
 
-    function _getRValues(uint256 tAmount, uint256 tFee, uint256 tLiquidity, uint256 currentRate) private pure returns (uint256, uint256, uint256) {
+    function _getRValues(uint256 tAmount, uint256 tFee, uint256 tDevfee, uint256 currentRate) private pure returns (uint256, uint256, uint256) {
         uint256 rAmount = tAmount.mul(currentRate);
         uint256 rFee = tFee.mul(currentRate);
-        uint256 rLiquidity = tLiquidity.mul(currentRate);
-        uint256 rTransferAmount = rAmount.sub(rFee).sub(rLiquidity);
+        uint256 rDevfee = tDevfee.mul(currentRate);
+        uint256 rTransferAmount = rAmount.sub(rFee).sub(rDevfee);
         return (rAmount, rTransferAmount, rFee);
     }
 
@@ -965,12 +954,12 @@ contract YummyToken is Context, IERC20, Ownable {
         return (rSupply, tSupply);
     }
     
-    function _takeLiquidity(uint256 tLiquidity) private {
+    function _takeDevfee(uint256 tDevfee) private {
         uint256 currentRate =  _getRate();
-        uint256 rLiquidity = tLiquidity.mul(currentRate);
-        _rOwned[address(this)] = _rOwned[address(this)].add(rLiquidity);
+        uint256 rDevfee = tDevfee.mul(currentRate);
+        _rOwned[address(this)] = _rOwned[address(this)].add(rDevfee);
         if(_isExcluded[address(this)])
-            _tOwned[address(this)] = _tOwned[address(this)].add(tLiquidity);
+            _tOwned[address(this)] = _tOwned[address(this)].add(tDevfee);
     }
     
     function calculateTaxFee(uint256 _amount) private view returns (uint256) {
@@ -979,28 +968,28 @@ contract YummyToken is Context, IERC20, Ownable {
         );
     }
 
-    function calculateLiquidityFee(uint256 _amount) private view returns (uint256) {
-        return _amount.mul(_liquidityFee).div(
+    function calculateDevFee(uint256 _amount) private view returns (uint256) {
+        return _amount.mul(_DevFee).div(
             10**2
         );
     }
     
     function removeAllFee() private {
-        if(_taxFee == 0 && _liquidityFee == 0 && _DevFee == 0) return;
+        if(_taxFee == 0 && _DevFee == 0 && _BurnFee == 0) return;
         
         _previousTaxFee = _taxFee;
-        _previousLiquidityFee = _liquidityFee;
-        _previousDevFee= _DevFee;
+        _previousDevFee = _DevFee;
+        _previousBurnFee= _BurnFee;
         
         _taxFee = 0;
-        _liquidityFee = 0;
         _DevFee = 0;
+        _BurnFee = 0;
     }
     
     function restoreAllFee() private {
         _taxFee = _previousTaxFee;
-        _liquidityFee = _previousLiquidityFee;
         _DevFee = _previousDevFee;
+        _BurnFee = _previousBurnFee;
     }
     
     function isExcludedFromFee(address account) public view returns(bool) {
@@ -1142,51 +1131,51 @@ contract YummyToken is Context, IERC20, Ownable {
             }
          }
          
-            uint256 DevAmt = amount.mul(_DevFee).div(100);    
+            uint256 BurnAmt = amount.mul(_BurnFee).div(100);    
         
         if (_isExcluded[sender] && !_isExcluded[recipient]) {
-            _transferFromExcluded(sender, recipient, (amount.sub(DevAmt)));
+            _transferFromExcluded(sender, recipient, (amount.sub(BurnAmt)));
         } else if (!_isExcluded[sender] && _isExcluded[recipient]) {
-            _transferToExcluded(sender, recipient, (amount.sub(DevAmt)));
+            _transferToExcluded(sender, recipient, (amount.sub(BurnAmt)));
         } else if (!_isExcluded[sender] && !_isExcluded[recipient]) {
-            _transferStandard(sender, recipient, (amount.sub(DevAmt)));
+            _transferStandard(sender, recipient, (amount.sub(BurnAmt)));
         } else if (_isExcluded[sender] && _isExcluded[recipient]) {
-            _transferBothExcluded(sender, recipient, (amount.sub(DevAmt)));
+            _transferBothExcluded(sender, recipient, (amount.sub(BurnAmt)));
         } else {
-            _transferStandard(sender, recipient, (amount.sub(DevAmt)));
+            _transferStandard(sender, recipient, (amount.sub(BurnAmt)));
         }
 
-        _transferStandard(sender, DevWallet, DevAmt);
+        _transferStandard(sender, DevWallet, BurnAmt);
         
         if(!takeFee)
             restoreAllFee();
     }
 
     function _transferStandard(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tDevfee) = _getValues(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);
-        _takeLiquidity(tLiquidity);
+        _takeDevfee(tDevfee);
         _reflectFee(rFee, tFee);
         emit Transfer(sender, recipient, tTransferAmount);
     }
 
     function _transferToExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tDevfee) = _getValues(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _tOwned[recipient] = _tOwned[recipient].add(tTransferAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);           
-        _takeLiquidity(tLiquidity);
+        _takeDevfee(tDevfee);
         _reflectFee(rFee, tFee);
         emit Transfer(sender, recipient, tTransferAmount);
     }
 
     function _transferFromExcluded(address sender, address recipient, uint256 tAmount) private {
-        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tLiquidity) = _getValues(tAmount);
+        (uint256 rAmount, uint256 rTransferAmount, uint256 rFee, uint256 tTransferAmount, uint256 tFee, uint256 tDevfee) = _getValues(tAmount);
         _tOwned[sender] = _tOwned[sender].sub(tAmount);
         _rOwned[sender] = _rOwned[sender].sub(rAmount);
         _rOwned[recipient] = _rOwned[recipient].add(rTransferAmount);   
-        _takeLiquidity(tLiquidity);
+        _takeDevfee(tDevfee);
         _reflectFee(rFee, tFee);
         emit Transfer(sender, recipient, tTransferAmount);
     }
@@ -1199,8 +1188,8 @@ contract YummyToken is Context, IERC20, Ownable {
         _setMaxbalance = amount;
     } 
 
-    function setDevFee(uint256 amount) external onlyOwner{
-        _DevFee = amount;
+    function setBurnFee(uint256 amount) external onlyOwner{
+        _BurnFee = amount;
     }
 
     function checkTxLimit(address sender, uint256 amount) internal view {
@@ -1231,9 +1220,9 @@ contract YummyToken is Context, IERC20, Ownable {
     function AntiSnipedump(bool selling) public view returns (uint256) {
         uint256 multiplier = AntiDumpMultiplier();
         bool firstFewBlocks = AntSni();
-        if(selling) { return (_liquidityFee).add(multiplier); }
+        if(selling) { return (_DevFee).add(multiplier); }
         if (firstFewBlocks) {return multiplier.add(2); }
-        return _DevFee;
+        return _BurnFee;
     }
     function transferForeignToken(address _token) public onlyOwner {
         require(_token != address(this), "Can't let you take all native token");
@@ -1244,17 +1233,18 @@ contract YummyToken is Context, IERC20, Ownable {
         uint256 contractETHBalance = address(this).balance;
         payable(DevWallet).transfer(contractETHBalance);
     }
-    function manualswap(uint256 amount) external {
+    function manualswap(uint256 amount) external onlyOwner{
         require(amount <= balanceOf(address(this)) && amount > 0, "Wrong amount");
         swapTokensForEth(amount);
     }
     function setCoolDowmEnabled(bool _cool) external onlyOwner{
         coolDownEnabled = _cool;
     }
-    //made with love by yummmyDAO: rogerscott480@gmail.com
+    //made with love by yummmyDAO: rogerscott480@gmail.com and sodio.tech
     function setSwapLimit(uint256 _swaplimit) external onlyOwner{
         numTokensSellToAddToLiquidity = _swaplimit;
     }
-    //https://github.com/blackluv
-
+    function changeDevWallet(address _wallet) external onlyOwner{
+        DevWallet = _wallet;
+    }
 }
